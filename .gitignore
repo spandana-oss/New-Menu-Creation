@@ -1,0 +1,9 @@
+.venv/
+.vscode/
+__pycache__/
+*.pyc
+.env
+src/.env
+cache/
+output/
+data/processed/regional_market_intelligence.csv
