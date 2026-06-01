@@ -5,20 +5,18 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.census import add_age_group
 from src.config import PROCESSED_DATA_DIR, RAW_DATA_DIR
 from src.io_utils import require_columns
 
 
-MERGED_DATA_PATH = PROCESSED_DATA_DIR / "merged_data.csv"
+ZCTA_LEVEL_CUSTUMER_REVIEWS_PATH = RAW_DATA_DIR / "zcta_level_custumer_reviews.xlsx"
 CUSTOMER_INTELLIGENCE_PATH = PROCESSED_DATA_DIR / "customer_intelligence.xlsx"
-RESTAURANT_SOURCE_PATH = RAW_DATA_DIR / "MEM_compstore_restaurants.csv"
 CUSTOMER_INTELLIGENCE_SHEET_NAME = "Restaurant Intelligence"
 
 BASE_COLUMNS = [
-    "restaurant_object_key",
-    "restaurant_name",
-    "zip_or_postal_code",
     "ZCTA",
+    "zip_or_postal_code",
     "FIPS",
     "CITY",
     "STATE",
@@ -27,6 +25,7 @@ BASE_COLUMNS = [
     "LNG",
     "POP",
     "AVG_HOUSEHOLD_SIZE",
+    "age_group",
     "WHITE_POP",
     "BLACK_POP",
     "ASIAN_POP",
@@ -34,11 +33,6 @@ BASE_COLUMNS = [
     "POP_DENSITY",
     "AREA_TYPE",
     "MEDIAN_INCOME",
-    "AGE_18_24",
-    "AGE_25_34",
-    "AGE_35_44",
-    "AGE_55_64",
-    "AGE_65_PLUS",
     "population_growth_rate",
     "ESTAB",
     "EMP",
@@ -152,12 +146,20 @@ RACE_LABELS = {
 }
 
 
-def _load_merged_data(path: Path = MERGED_DATA_PATH) -> pd.DataFrame:
-    return pd.read_csv(path)
+def _load_zcta_level_custumer_reviews(
+    path: Path = ZCTA_LEVEL_CUSTUMER_REVIEWS_PATH,
+) -> pd.DataFrame:
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Customer intelligence source file not found: {path}")
 
+    df = pd.read_excel(path, sheet_name="Sheet1")
 
-def _load_restaurant_source(path: Path = RESTAURANT_SOURCE_PATH) -> pd.DataFrame:
-    return pd.read_csv(path)
+    if "zip_or_postal_code" in df.columns:
+        df["zip_or_postal_code"] = df["zip_or_postal_code"].astype(str).str.zfill(5)
+    if "ZCTA" in df.columns:
+        df["ZCTA"] = df["ZCTA"].astype(str).str.zfill(5)
+    return df
 
 
 def _normalize_text(value, default: str) -> str:
@@ -165,6 +167,15 @@ def _normalize_text(value, default: str) -> str:
         return default
     text = str(value).strip()
     return text if text else default
+
+
+def _normalize_rating_value(value):
+    rating_value = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+    if pd.isna(rating_value):
+        return pd.NA
+    if rating_value > 10:
+        rating_value = rating_value / 20
+    return rating_value
 
 
 def _location_text(row: pd.Series) -> str:
@@ -191,29 +202,30 @@ def _dominant_race(row: pd.Series) -> str:
 
 
 def _dominant_age_phrase(row: pd.Series) -> str:
-    age_columns = [
-        "AGE_18_24",
-        "AGE_25_34",
-        "AGE_35_44",
-        "AGE_55_64",
-        "AGE_65_PLUS",
-    ]
-    age_values = pd.to_numeric(row.reindex(age_columns), errors="coerce").fillna(0)
-    if age_values.max() <= 0:
+    age_group = _normalize_text(row.get("age_group"), "unknown").lower()
+    if age_group in {"young", "millennial"}:
+        return "a strong presence of younger adults"
+    if age_group == "adult":
+        return "a balanced mix of working-age households"
+    if age_group == "senior":
+        return "strong representation from seniors demographics"
+
+    age_value = row.get("median_age", row.get("avg_age"))
+    avg_age = pd.to_numeric(pd.Series([age_value]), errors="coerce").iloc[0]
+    if pd.isna(avg_age):
         return "a balanced age mix"
 
-    dominant_column = age_values.idxmax()
-    if dominant_column == "AGE_65_PLUS":
-        return "strong representation from seniors demographics"
-    if dominant_column in {"AGE_18_24", "AGE_25_34"}:
+    if avg_age < 30:
         return "a strong presence of younger adults"
-    if dominant_column in {"AGE_35_44", "AGE_55_64"}:
+    if avg_age < 45:
         return "a balanced mix of working-age households"
-    return "a balanced age mix"
+    if avg_age < 60:
+        return "a mature adult customer base"
+    return "strong representation from seniors demographics"
 
 
 def _rating_text(rating: float | int | str | None) -> str:
-    rating_value = pd.to_numeric(pd.Series([rating]), errors="coerce").iloc[0]
+    rating_value = _normalize_rating_value(rating)
     if pd.isna(rating_value):
         return "Guests share mixed views, with room to sharpen the experience."
     if rating_value >= 4.2:
@@ -300,45 +312,33 @@ def _demographic_based_food_insights(row: pd.Series) -> str:
     )
 
 
-def _attach_google_review_ratings(df: pd.DataFrame) -> pd.DataFrame:
-    if "google_review_rating" in df.columns:
-        return df.copy()
-
-    if not RESTAURANT_SOURCE_PATH.exists():
-        enriched = df.copy()
-        enriched["google_review_rating"] = pd.NA
-        return enriched
-
-    restaurant_source = _load_restaurant_source()
-    require_columns(
-        restaurant_source,
-        ["restaurant_object_key", "rating_value"],
-        "Restaurant source data",
+def build_customer_intelligence(
+    zcta_level_custumer_reviews: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    source = (
+        _load_zcta_level_custumer_reviews()
+        if zcta_level_custumer_reviews is None
+        else zcta_level_custumer_reviews.copy()
     )
-
-    ratings = (
-        restaurant_source[["restaurant_object_key", "rating_value"]]
-        .drop_duplicates(subset=["restaurant_object_key"])
-        .rename(columns={"rating_value": "google_review_rating"})
-    )
-
-    enriched = df.merge(ratings, on="restaurant_object_key", how="left")
-    enriched["google_review_rating"] = pd.to_numeric(
-        enriched["google_review_rating"],
-        errors="coerce",
-    )
-    return enriched
-
-
-def build_customer_intelligence(df: pd.DataFrame | None = None) -> pd.DataFrame:
-    source = _load_merged_data() if df is None else df.copy()
+    source = add_age_group(source)
     require_columns(
         source,
         BASE_COLUMNS,
-        "Merged customer intelligence data",
+        "ZCTA-level customer reviews data",
     )
 
-    enriched = _attach_google_review_ratings(source)
+    require_columns(
+        source,
+        ["google_review_rating"],
+        "ZCTA-level customer reviews data",
+    )
+
+    source["google_review_rating"] = pd.to_numeric(
+        source["google_review_rating"],
+        errors="coerce",
+    )
+
+    enriched = source.copy()
     enriched["generated_customer_reviews"] = enriched.apply(
         _generated_customer_reviews,
         axis=1,
@@ -383,10 +383,10 @@ def _save_workbook_atomic(df: pd.DataFrame, path: Path) -> Path:
 
 
 def save_customer_intelligence(
-    df: pd.DataFrame | None = None,
+    zcta_level_custumer_reviews: pd.DataFrame | None = None,
     path: Path = CUSTOMER_INTELLIGENCE_PATH,
 ) -> Path:
-    output_df = build_customer_intelligence() if df is None else df.copy()
+    output_df = build_customer_intelligence(zcta_level_custumer_reviews)
     return _save_workbook_atomic(output_df, path)
 
 
