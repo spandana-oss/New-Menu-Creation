@@ -33,6 +33,29 @@ AGE_FIELDS = {
 }
 
 
+def age_group_from_value(age):
+    if pd.isna(age):
+        return "unknown"
+    if age <= 0 or age > 100:
+        return "unknown"
+    if age < 30:
+        return "young"
+    if age < 40:
+        return "millennial"
+    if age < 55:
+        return "adult"
+    return "senior"
+
+
+def age_group_from_mean(age):
+    return age_group_from_value(age)
+
+
+def _normalize_age_group(value):
+    text = str(value).strip().lower()
+    return text if text and text not in {"nan", "none"} else "unknown"
+
+
 def _zcta_column(df):
     if "zip code tabulation area" not in df.columns:
         raise KeyError("Census response is missing 'zip code tabulation area'.")
@@ -104,16 +127,28 @@ def _coerce_cached_ethnicity_frame(cached):
     )
 
 
-def add_avg_age(df):
+def add_age_group(df):
     df = df.copy()
     available_age_cols = [column for column in AGE_FIELDS if column in df.columns]
 
+    if "median_age" in df.columns:
+        df["median_age"] = pd.to_numeric(df["median_age"], errors="coerce")
+        df.loc[(df["median_age"] <= 0) | (df["median_age"] > 100), "median_age"] = np.nan
+        df["age_group"] = df["median_age"].apply(age_group_from_value)
+        return df
+
+    if "age_group" in df.columns:
+        df["age_group"] = df["age_group"].apply(_normalize_age_group)
+        return df
+
     if "avg_age" in df.columns:
         df["avg_age"] = pd.to_numeric(df["avg_age"], errors="coerce")
+        df.loc[(df["avg_age"] <= 0) | (df["avg_age"] > 100), "avg_age"] = np.nan
+        df["age_group"] = df["avg_age"].apply(age_group_from_value)
         return df
 
     if not available_age_cols:
-        df["avg_age"] = np.nan
+        df["age_group"] = "unknown"
         return df
 
     age_counts = df[available_age_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
@@ -123,8 +158,13 @@ def add_avg_age(df):
         for column, midpoint in AGE_FIELDS.items()
         if column in age_counts.columns
     )
-    df["avg_age"] = np.where(total > 0, weighted_total / total, np.nan)
+    avg_age = np.where(total > 0, weighted_total / total, np.nan)
+    df["age_group"] = pd.Series(avg_age, index=df.index).apply(age_group_from_value)
     return df
+
+
+def add_avg_age(df):
+    return add_age_group(df)
 
 
 def fetch_population():
@@ -287,34 +327,31 @@ def fetch_ethnicity():
 def fetch_age_distribution():
     cache_file = "age_distribution.csv"
     cached = load_cache(cache_file)
-    if cached is not None:
+    if cached is not None and {"median_age", "age_group"}.issubset(cached.columns):
         print("Loaded age_distribution from cache")
-        cached = add_avg_age(cached)
-        return cached[["ZCTA", "avg_age"]]
+        cached = add_age_group(cached)
+        result = cached[["ZCTA", "median_age", "age_group"]].copy()
+        save_cache(result, cache_file)
+        return result[["ZCTA", "age_group"]]
+    if cached is not None:
+        print("Stale age_distribution cache detected; rebuilding")
 
-    url = "https://api.census.gov/data/2022/acs/acs5/subject"
+    url = "https://api.census.gov/data/2022/acs/acs5"
     params = {
-        "get": (
-            "S0101_C01_019E,"
-            "S0101_C01_020E,"
-            "S0101_C01_021E,"
-            "S0101_C01_023E,"
-            "S0101_C01_024E"
-        ),
+        "get": "B01002_001E",
         "for": "zip code tabulation area:*",
         "key": API_KEY,
     }
 
     data = safe_request(url, params)
     df = pd.DataFrame(data[1:], columns=data[0])
-
-    for column in AGE_FIELDS:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
+    df = df.rename(columns={"B01002_001E": "median_age"})
+    df["median_age"] = pd.to_numeric(df["median_age"], errors="coerce")
 
     df["ZCTA"] = df[_zcta_column(df)].astype(str).str.zfill(5)
-    result = add_avg_age(df)[["ZCTA", "avg_age"]]
+    result = add_age_group(df)[["ZCTA", "median_age", "age_group"]]
     save_cache(result, cache_file)
-    return result
+    return result[["ZCTA", "age_group"]]
 
 
 def fetch_population_growth():

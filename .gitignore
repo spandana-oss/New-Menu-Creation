@@ -6,3 +6,5 @@ __pycache__/
 src/.env
 cache/
 data/processed/regional_market_intelligence.csv
+data/processed/*.tmp.xlsx
+data/processed/~$*.xlsx

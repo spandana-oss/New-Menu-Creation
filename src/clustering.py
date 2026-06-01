@@ -104,7 +104,7 @@ def _build_food_behavior(df, geo_column):
                 if _has_any(tags, keywords):
                     category_counts[category] += 1
 
-        restaurant_count = group["restaurant_object_key"].nunique() if "restaurant_object_key" in group.columns else len(group)
+        restaurant_count = len(group)
         unique_tags = set(all_tags)
         dominant_tag_count = max(
             (all_tags.count(tag) for tag in unique_tags),

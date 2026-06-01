@@ -18,8 +18,7 @@ from src.census import (
 
 
 MASTER_FEATURE_COLUMNS = [
-    'restaurant_object_key',
-    'restaurant_name',
+   
     'zip_or_postal_code',
     'ZCTA',
     'FIPS',
@@ -37,11 +36,7 @@ MASTER_FEATURE_COLUMNS = [
     'POP_DENSITY',
     'AREA_TYPE',
     'MEDIAN_INCOME',
-    'AGE_18_24',
-    'AGE_25_34',
-    'AGE_35_44',
-    'AGE_55_64',
-    'AGE_65_PLUS',
+    'age_group',
     'population_growth_rate',
     'ESTAB',
     'EMP',
@@ -54,8 +49,7 @@ MASTER_FEATURE_COLUMNS = [
 ]
 
 SEGMENTATION_ANALYSIS_COLUMNS = [
-    'restaurant_object_key',
-    'restaurant_name',
+
     'zip_or_postal_code',
     'ZCTA',
     'FIPS',
@@ -65,7 +59,6 @@ SEGMENTATION_ANALYSIS_COLUMNS = [
     'AREA_TYPE',
     'cluster_id',
     'market_segment',
-    'restaurant category',
     'price positioning',
     'market trend',
     'menu_signal_strength',
@@ -93,6 +86,7 @@ CENSUS_COLUMNS = [
     'LNG',
     'POP',
     'AVG_HOUSEHOLD_SIZE',
+    'age_group',
     'WHITE_POP',
     'BLACK_POP',
     'ASIAN_POP',
@@ -184,6 +178,21 @@ def _load_datasets():
         ]
     )
 
+    datasets['zip_map'] = datasets['zip_map'].copy()
+    if 'zcta' in datasets['zip_map'].columns:
+        datasets['zip_map']['zcta'] = (
+            datasets['zip_map']['zcta']
+            .astype(str)
+            .str.zfill(5)
+        )
+        datasets['zip_map'] = datasets['zip_map'].rename(columns={'zcta': 'ZCTA'})
+    if 'ZCTA' in datasets['zip_map'].columns:
+        datasets['zip_map']['ZCTA'] = (
+            datasets['zip_map']['ZCTA']
+            .astype(str)
+            .str.zfill(5)
+        )
+
     return datasets
 
 
@@ -194,9 +203,8 @@ def _merge_datasets(datasets):
     )
 
     df = datasets['restaurants'].merge(
-        datasets['zip_map'][['zcta', 'FIPS']],
-        left_on="ZCTA",
-        right_on="zcta",
+        datasets['zip_map'][['ZCTA', 'FIPS']],
+        on="ZCTA",
         how="left"
     )
 
@@ -314,4 +322,3 @@ def merge_datasets():
     print(f"Census data file: {saved_census_filename}")
 
     return final_df
-
