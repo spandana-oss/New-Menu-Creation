@@ -125,14 +125,14 @@ def get_zip_to_fips(path=None):
     mapping = base[["ZCTA", "COUNTY_FIPS"]].copy()
     mapping["ZCTA"] = mapping["ZCTA"].astype(str).str.zfill(5)
     county_fips = pd.to_numeric(mapping["COUNTY_FIPS"], errors="coerce")
-    mapping["FIPS"] = county_fips.apply(
+    mapping["COUNTY_FIPS"] = county_fips.apply(
         lambda value: f"{int(value):05d}" if pd.notna(value) else pd.NA
     )
     mapping = mapping.rename(columns={"ZCTA": "zcta"})
 
     return (
-        mapping[["zcta", "FIPS"]]
-        .dropna(subset=["zcta", "FIPS"])
+        mapping[["zcta", "COUNTY_FIPS"]]
+        .dropna(subset=["zcta", "COUNTY_FIPS"])
         .drop_duplicates(subset=["zcta"])
         .sort_values("zcta")
         .reset_index(drop=True)

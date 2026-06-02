@@ -17,7 +17,6 @@ CUSTOMER_INTELLIGENCE_SHEET_NAME = "Restaurant Intelligence"
 BASE_COLUMNS = [
     "ZCTA",
     "zip_or_postal_code",
-    "FIPS",
     "CITY",
     "STATE",
     "COUNTY",
@@ -26,10 +25,6 @@ BASE_COLUMNS = [
     "POP",
     "AVG_HOUSEHOLD_SIZE",
     "age_group",
-    "WHITE_POP",
-    "BLACK_POP",
-    "ASIAN_POP",
-    "HISPANIC_POP",
     "POP_DENSITY",
     "AREA_TYPE",
     "MEDIAN_INCOME",
@@ -138,13 +133,6 @@ SEGMENT_LOCAL_PREFERENCES = {
     "General restaurant": "familiar comfort meals and flexible combo options",
 }
 
-RACE_LABELS = {
-    "WHITE_POP": "white",
-    "BLACK_POP": "black",
-    "ASIAN_POP": "Asian",
-    "HISPANIC_POP": "Hispanic",
-}
-
 
 def _load_zcta_level_custumer_reviews(
     path: Path = ZCTA_LEVEL_CUSTUMER_REVIEWS_PATH,
@@ -188,17 +176,6 @@ def _location_text(row: pd.Series) -> str:
     if state:
         return state
     return "the area"
-
-
-def _dominant_race(row: pd.Series) -> str:
-    race_counts = pd.to_numeric(
-        row.reindex(RACE_LABELS.keys()),
-        errors="coerce",
-    ).fillna(0)
-    if race_counts.max() <= 0:
-        return "diverse"
-    dominant_column = race_counts.idxmax()
-    return RACE_LABELS.get(dominant_column, "diverse")
 
 
 def _dominant_age_phrase(row: pd.Series) -> str:
@@ -301,12 +278,11 @@ def _local_food_preferences(row: pd.Series) -> str:
 
 
 def _demographic_based_food_insights(row: pd.Series) -> str:
-    race_phrase = _dominant_race(row)
     age_phrase = _dominant_age_phrase(row)
     category = _normalize_text(row.get("restaurant category"), "General restaurant")
     category_phrase = CATEGORY_FOOD_PHRASES.get(category, CATEGORY_FOOD_PHRASES["General restaurant"])
     return (
-        f"The surrounding population is primarily {race_phrase} with {age_phrase}. "
+        f"The surrounding population shows {age_phrase}. "
         f"Customers in this ZIP code show higher engagement with {category_phrase} offerings "
         f"that balance flavor, affordability, and convenience."
     )

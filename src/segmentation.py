@@ -234,108 +234,147 @@ def restaurant_categories(df):
 
 
 def describe_cluster(profile):
+    def level(name):
+        value = profile.get(name, 0)
+        if pd.isna(value):
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
 
     drivers = {
-        'Young Demand': profile['young_demand_level'],
-        'Senior Demand': profile['senior_demand_level'],
-        'Competition': profile['competition_level'],
-        'Growth': profile['growth_level'],
-        'Cuisine Variety': profile['cuisine_variety_level'],
-        'Customer Engagement': profile['customer_engagement_level'],
-        'Fast Food': profile['fast_food_level'],
-        'Healthy Food': profile['healthy_level'],
-        'Beverages': profile['beverage_level'],
-        'Wings': profile['wings_level'],
-        'Income': profile['income_level']
+        'Young Demand': level('young_demand_level'),
+        'Senior Demand': level('senior_demand_level'),
+        'Competition': level('competition_level'),
+        'Growth': level('growth_level'),
+        'Cuisine Variety': level('cuisine_variety_level'),
+        'Cuisine Focus': level('cuisine_focus_level'),
+        'Customer Engagement': level('customer_engagement_level'),
+        'Fast Food': level('fast_food_level'),
+        'Healthy Food': level('healthy_level'),
+        'Beverages': level('beverage_level'),
+        'Wings': level('wings_level'),
+        'Income': level('income_level')
     }
 
-    primary_driver = max(
-        drivers,
-        key=drivers.get
+    ordered_drivers = sorted(
+        drivers.items(),
+        key=lambda item: item[1],
+        reverse=True
     )
+    primary_driver = ordered_drivers[0][0]
+    secondary_driver = ordered_drivers[1][0] if len(ordered_drivers) > 1 else primary_driver
+
+    scores = {
+        'Comfort Dining Market': (
+            level('senior_demand_level') * 2.4
+            + level('cuisine_focus_level') * 1.8
+            + (1 - level('healthy_level')) * 0.35
+            + (1 - level('fast_food_level')) * 0.2
+        ),
+        'Youth Convenience Market': (
+            level('young_demand_level') * 2.2
+            + level('cuisine_variety_level') * 1.9
+            + level('fast_food_level') * 0.7
+            + level('growth_level') * 0.5
+            + level('beverage_level') * 0.4
+        ),
+        'Family Value Market': (
+            level('fast_food_level') * 2.3
+            + (1 - level('income_level')) * 1.4
+            + (1 - level('growth_level')) * 0.6
+            + (1 - level('competition_level')) * 0.25
+        ),
+        'Social Dining Market': (
+            level('customer_engagement_level') * 2.0
+            + level('beverage_level') * 1.9
+            + level('wings_level') * 1.8
+            + level('cuisine_variety_level') * 0.6
+        ),
+        'Premium Dining Market': (
+            level('income_level') * 2.2
+            + level('competition_level') * 1.7
+            + level('growth_level') * 1.2
+            + level('customer_engagement_level') * 0.8
+        ),
+        'Healthy Lifestyle Market': (
+            level('healthy_level') * 2.8
+            + level('senior_demand_level') * 0.8
+            + level('income_level') * 0.5
+            + (1 - level('fast_food_level')) * 0.4
+        ),
+    }
+
+    if level('senior_demand_level') >= 0.65 and level('cuisine_focus_level') >= 0.55:
+        scores['Comfort Dining Market'] += 0.8
+
+    if level('young_demand_level') >= 0.6 and level('cuisine_variety_level') >= 0.55:
+        scores['Youth Convenience Market'] += 0.8
+
+    if level('fast_food_level') >= 0.65 and level('income_level') <= 0.45:
+        scores['Family Value Market'] += 0.9
 
     if (
-        profile['senior_demand_level'] >= 0.7
-        and profile['income_level'] >= 0.7
+        level('customer_engagement_level') >= 0.6
+        and level('beverage_level') >= 0.55
     ):
-        return 'Comfort Dining Market'
+        scores['Social Dining Market'] += 0.9
 
     if (
-        profile['young_demand_level'] >= 0.7
-        and profile['fast_food_level'] >= 0.6
+        level('competition_level') >= 0.6
+        and level('income_level') >= 0.6
     ):
-        return 'Youth Convenience Market'
+        scores['Premium Dining Market'] += 0.8
+
+    if level('healthy_level') >= 0.65:
+        scores['Healthy Lifestyle Market'] += 0.9
+
+    if level('wings_level') >= 0.6 and level('beverage_level') >= 0.45:
+        scores['Social Dining Market'] += 0.5
+
+    if level('growth_level') >= 0.6 and level('young_demand_level') >= 0.45:
+        scores['Youth Convenience Market'] += 0.4
+        scores['Premium Dining Market'] += 0.3
+
+    driver_bias = {
+        'Young Demand': ('Youth Convenience Market', 0.35),
+        'Senior Demand': ('Comfort Dining Market', 0.35),
+        'Competition': ('Premium Dining Market', 0.3),
+        'Growth': ('Premium Dining Market', 0.3),
+        'Cuisine Variety': ('Youth Convenience Market', 0.3),
+        'Cuisine Focus': ('Comfort Dining Market', 0.3),
+        'Customer Engagement': ('Social Dining Market', 0.35),
+        'Fast Food': ('Family Value Market', 0.35),
+        'Healthy Food': ('Healthy Lifestyle Market', 0.4),
+        'Beverages': ('Social Dining Market', 0.3),
+        'Wings': ('Social Dining Market', 0.35),
+        'Income': ('Premium Dining Market', 0.3),
+    }
+
+    primary_segment, primary_boost = driver_bias.get(primary_driver, (None, 0.0))
+    if primary_segment is not None:
+        scores[primary_segment] += primary_boost
+
+    secondary_segment, secondary_boost = driver_bias.get(secondary_driver, (None, 0.0))
+    if secondary_segment is not None:
+        scores[secondary_segment] += secondary_boost * 0.5
 
     if (
-        profile['fast_food_level'] >= 0.65
-        and profile['income_level'] <= 0.4
+        level('healthy_level') >= 0.7
+        and level('income_level') >= 0.55
+        and scores['Healthy Lifestyle Market'] >= scores['Premium Dining Market']
     ):
-        return 'Family Value Market'
-
-    if profile['wings_level'] >= 0.7:
-        return 'Social Dining Market'
+        scores['Healthy Lifestyle Market'] += 0.4
 
     if (
-        profile['beverage_level'] >= 0.7
-        and profile['customer_engagement_level'] >= 0.6
+        level('income_level') <= 0.4
+        and level('growth_level') <= 0.45
+        and scores['Family Value Market'] >= scores['Youth Convenience Market']
     ):
-        return 'Social Dining Market'
+        scores['Family Value Market'] += 0.4
 
-    if (
-        profile['competition_level'] >= 0.8
-        and profile['growth_level'] >= 0.65
-    ):
-        return 'Premium Dining Market'
-
-    if (
-        profile['income_level'] >= 0.85
-        and profile['customer_engagement_level'] >= 0.65
-    ):
-        return 'Premium Dining Market'
-
-    if (
-        profile['healthy_level'] >= 0.75
-        and profile['income_level'] >= 0.65
-    ):
-        return 'Healthy Lifestyle Market'
-
-    if profile['cuisine_variety_level'] >= 0.7:
-        return 'Youth Convenience Market'
-
-    if (
-        profile['senior_demand_level'] >= 0.6
-        and profile['healthy_level'] <= 0.4
-    ):
-        return 'Comfort Dining Market'
-
-    if (
-        profile['wings_level'] >= 0.6
-        and profile['beverage_level'] >= 0.6
-    ):
-        return 'Social Dining Market'
-
-    if primary_driver == 'Healthy Food':
-        return 'Healthy Lifestyle Market'
-
-    if primary_driver == 'Fast Food':
-        return 'Family Value Market'
-
-    if primary_driver == 'Wings':
-        return 'Social Dining Market'
-
-    if primary_driver == 'Beverages':
-        return 'Social Dining Market'
-
-    if primary_driver == 'Cuisine Variety':
-        return 'Youth Convenience Market'
-
-    if primary_driver == 'Young Demand':
-        return 'Youth Convenience Market'
-
-    if primary_driver == 'Senior Demand':
-        return 'Comfort Dining Market'
-
-    return 'Healthy Lifestyle Market'
+    return max(scores, key=scores.get)
 
 
 def assign_market_segments(df, cluster_profile):

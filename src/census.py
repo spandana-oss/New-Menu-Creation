@@ -98,31 +98,20 @@ def save_cache(df, filename):
 
 def _coerce_cached_cbp_frame(cached):
     frame = cached.copy()
-    frame["FIPS"] = frame["FIPS"].astype(str).str.zfill(5)
+    if "COUNTY_FIPS" not in frame.columns and "FIPS" in frame.columns:
+        frame = frame.rename(columns={"FIPS": "COUNTY_FIPS"})
+    if "COUNTY_FIPS" not in frame.columns:
+        raise KeyError("Cached CBP data is missing COUNTY_FIPS.")
+
+    frame["COUNTY_FIPS"] = frame["COUNTY_FIPS"].astype(str).str.zfill(5)
 
     for column in ("ESTAB", "EMP"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
     return (
-        frame[["FIPS", "ESTAB", "EMP"]]
-        .drop_duplicates(subset=["FIPS"])
-        .sort_values("FIPS")
-        .reset_index(drop=True)
-    )
-
-
-def _coerce_cached_ethnicity_frame(cached):
-    frame = cached.copy()
-    frame["ZCTA"] = frame["ZCTA"].astype(str).str.zfill(5)
-
-    cols = ["WHITE_POP", "BLACK_POP", "ASIAN_POP", "HISPANIC_POP"]
-    for column in cols:
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
-
-    return (
-        frame[["ZCTA", *cols]]
-        .drop_duplicates(subset=["ZCTA"])
-        .sort_values("ZCTA")
+        frame[["COUNTY_FIPS", "ESTAB", "EMP"]]
+        .drop_duplicates(subset=["COUNTY_FIPS"])
+        .sort_values("COUNTY_FIPS")
         .reset_index(drop=True)
     )
 
@@ -247,7 +236,9 @@ def fetch_cbp():
     cached = load_cache(cache_file)
     if cached is not None:
         print("Loaded CBP from cache")
-        return _coerce_cached_cbp_frame(cached)
+        result = _coerce_cached_cbp_frame(cached)
+        save_cache(result, cache_file)
+        return result
 
     url = "https://api.census.gov/data/2022/cbp"
     params = {
@@ -265,59 +256,12 @@ def fetch_cbp():
     df["EMP"] = pd.to_numeric(df["EMP"], errors="coerce")
     df["state"] = df["state"].astype(str).str.zfill(2)
     df["county"] = df["county"].astype(str).str.zfill(3)
-    df["FIPS"] = df["state"] + df["county"]
+    df["COUNTY_FIPS"] = df["state"] + df["county"]
 
     result = (
-        df[["FIPS", "ESTAB", "EMP"]]
-        .drop_duplicates(subset=["FIPS"])
-        .sort_values("FIPS")
-        .reset_index(drop=True)
-    )
-    save_cache(result, cache_file)
-    return result
-
-
-def fetch_ethnicity():
-    cache_file = "ethnicity.csv"
-    cached = load_cache(cache_file)
-    if cached is not None:
-        print("Loaded ethnicity from cache")
-        return _coerce_cached_ethnicity_frame(cached)
-
-    url = "https://api.census.gov/data/2022/acs/acs5"
-    params = {
-        "get": (
-            "B02001_002E,"
-            "B02001_003E,"
-            "B02001_005E,"
-            "B03003_003E"
-        ),
-        "for": "zip code tabulation area:*",
-        "key": API_KEY,
-    }
-
-    data = safe_request(url, params)
-    df = pd.DataFrame(data[1:], columns=data[0])
-
-    df = df.rename(
-        columns={
-            "B02001_002E": "WHITE_POP",
-            "B02001_003E": "BLACK_POP",
-            "B02001_005E": "ASIAN_POP",
-            "B03003_003E": "HISPANIC_POP",
-        }
-    )
-
-    cols = ["WHITE_POP", "BLACK_POP", "ASIAN_POP", "HISPANIC_POP"]
-    for col in cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df["ZCTA"] = df[_zcta_column(df)].astype(str).str.zfill(5)
-
-    result = (
-        df[["ZCTA", *cols]]
-        .drop_duplicates(subset=["ZCTA"])
-        .sort_values("ZCTA")
+        df[["COUNTY_FIPS", "ESTAB", "EMP"]]
+        .drop_duplicates(subset=["COUNTY_FIPS"])
+        .sort_values("COUNTY_FIPS")
         .reset_index(drop=True)
     )
     save_cache(result, cache_file)
@@ -412,7 +356,6 @@ def fetch_demographic_bundle():
         "population": fetch_population(),
         "income": fetch_income(),
         "household_size": fetch_household_size(),
-        "ethnicity": fetch_ethnicity(),
         "age": fetch_age_distribution(),
         "growth": fetch_population_growth(),
     }

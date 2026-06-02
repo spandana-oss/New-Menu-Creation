@@ -15,6 +15,9 @@ MERGED_CUSTOMER_INTELLIGENCE_PATH = (
     PROCESSED_DATA_DIR / "merged_customer_intelligence.xlsx"
 )
 MERGED_CUSTOMER_INTELLIGENCE_SHEET_NAME = "Merged Intelligence"
+DEMOGRAPHIC_ONLY_RESTAURANT_SOURCE_FILES = {
+    "Comp_Restaurants_Curated_DCA.csv",
+}
 
 
 def _normalize_zcta(df: pd.DataFrame) -> pd.DataFrame:
@@ -36,6 +39,43 @@ def _load_customer_intelligence(
     if not Path(path).exists():
         raise FileNotFoundError(f"Customer intelligence file not found: {path}")
     return _normalize_zcta(pd.read_excel(path, sheet_name=0))
+
+
+def _merge_customer_intelligence_rows(
+    restaurant_rows: pd.DataFrame,
+    customer_intelligence: pd.DataFrame,
+) -> pd.DataFrame:
+    extra_columns = [
+        column
+        for column in customer_intelligence.columns
+        if column not in restaurant_rows.columns
+    ]
+
+    restaurant_rows = restaurant_rows.copy()
+    customer_intelligence = customer_intelligence.copy()
+
+    restaurant_rows["_zcta_row"] = restaurant_rows.groupby(
+        "ZCTA",
+        sort=False,
+    ).cumcount()
+    customer_intelligence["_zcta_row"] = customer_intelligence.groupby(
+        "ZCTA",
+        sort=False,
+    ).cumcount()
+
+    right = customer_intelligence[["ZCTA", "_zcta_row", *extra_columns]]
+    combined = restaurant_rows.merge(
+        right,
+        on=["ZCTA", "_zcta_row"],
+        how="left",
+    )
+
+    ordered_columns = [
+        column
+        for column in restaurant_rows.columns
+        if column != "_zcta_row"
+    ] + extra_columns
+    return combined[ordered_columns].copy()
 
 
 def _save_workbook_atomic(df: pd.DataFrame, path: Path) -> Path:
@@ -69,40 +109,54 @@ def merge_processed_outputs(
 
     require_columns(merged_data, ["ZCTA"], "Merged data")
     require_columns(customer_intelligence, ["ZCTA"], "Customer intelligence data")
+    require_columns(
+        merged_data,
+        ["restaurant_source_file"],
+        "Merged data",
+    )
 
-    if len(merged_data) != len(customer_intelligence):
+    merged_data = merged_data.copy()
+    merged_data["_output_order"] = range(len(merged_data))
+
+    dca_mask = merged_data["restaurant_source_file"].isin(
+        DEMOGRAPHIC_ONLY_RESTAURANT_SOURCE_FILES
+    )
+    dca_rows = merged_data.loc[dca_mask].copy()
+    customer_intelligence_rows = merged_data.loc[~dca_mask].copy()
+
+    if len(customer_intelligence_rows) != len(customer_intelligence):
         raise ValueError(
-            "Merged data and customer intelligence data must have the same row count "
-            "to merge safely on ZCTA."
+            "Customer intelligence should only be merged into the non-DCA restaurant "
+            f"rows, but found {len(customer_intelligence_rows)} eligible rows and "
+            f"{len(customer_intelligence)} customer intelligence rows."
         )
+
+    merged_customer_intelligence = _merge_customer_intelligence_rows(
+        customer_intelligence_rows,
+        customer_intelligence,
+    )
 
     extra_columns = [
         column
-        for column in customer_intelligence.columns
+        for column in merged_customer_intelligence.columns
         if column not in merged_data.columns
     ]
 
-    merged_data = merged_data.copy()
-    customer_intelligence = customer_intelligence.copy()
+    for column in extra_columns:
+        dca_rows[column] = pd.NA
 
-    merged_data["_zcta_row"] = merged_data.groupby("ZCTA", sort=False).cumcount()
-    customer_intelligence["_zcta_row"] = customer_intelligence.groupby(
-        "ZCTA",
-        sort=False,
-    ).cumcount()
+    dca_rows = dca_rows.reindex(columns=merged_customer_intelligence.columns)
 
-    right = customer_intelligence[["ZCTA", "_zcta_row", *extra_columns]]
-    combined = merged_data.merge(
-        right,
-        on=["ZCTA", "_zcta_row"],
-        how="left",
-    )
+    combined = pd.concat(
+        [merged_customer_intelligence, dca_rows],
+        ignore_index=True,
+    ).sort_values("_output_order", kind="stable")
 
     ordered_columns = [
         column
-        for column in merged_data.columns
-        if column != "_zcta_row"
-    ] + extra_columns
+        for column in combined.columns
+        if column != "_output_order"
+    ]
     return combined[ordered_columns].copy()
 
 
