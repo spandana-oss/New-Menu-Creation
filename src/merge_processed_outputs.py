@@ -109,18 +109,17 @@ def merge_processed_outputs(
 
     require_columns(merged_data, ["ZCTA"], "Merged data")
     require_columns(customer_intelligence, ["ZCTA"], "Customer intelligence data")
-    require_columns(
-        merged_data,
-        ["restaurant_source_file"],
-        "Merged data",
-    )
 
     merged_data = merged_data.copy()
     merged_data["_output_order"] = range(len(merged_data))
 
-    dca_mask = merged_data["restaurant_source_file"].isin(
-        DEMOGRAPHIC_ONLY_RESTAURANT_SOURCE_FILES
-    )
+    if "restaurant_source_file" in merged_data.columns:
+        dca_mask = merged_data["restaurant_source_file"].isin(
+            DEMOGRAPHIC_ONLY_RESTAURANT_SOURCE_FILES
+        )
+    else:
+        dca_mask = pd.Series(False, index=merged_data.index)
+
     dca_rows = merged_data.loc[dca_mask].copy()
     customer_intelligence_rows = merged_data.loc[~dca_mask].copy()
 

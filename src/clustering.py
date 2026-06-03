@@ -102,7 +102,7 @@ def _build_food_behavior(df, geo_column):
 
             for category, keywords in category_keywords.items():
                 if _has_any(tags, keywords):
-                    category_counts[category] += 1
+                    category_counts[category] += 1.
 
         restaurant_count = len(group)
         unique_tags = set(all_tags)

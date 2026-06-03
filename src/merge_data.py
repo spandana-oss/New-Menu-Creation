@@ -41,11 +41,8 @@ MASTER_FEATURE_COLUMNS = [
     'ESTAB',
     'EMP',
     'RESTAURANT_COUNT',
-    'cluster_id',
     'market_segment',
-    'restaurant category',
     'price positioning',
-    'restaurant_source_file'
 ]
 
 SEGMENTATION_ANALYSIS_COLUMNS = [
@@ -56,7 +53,6 @@ SEGMENTATION_ANALYSIS_COLUMNS = [
     'STATE',
     'COUNTY',
     'AREA_TYPE',
-    'cluster_id',
     'market_segment',
     'price positioning',
     'market trend',
@@ -70,9 +66,7 @@ SEGMENTATION_ANALYSIS_COLUMNS = [
     'Customer Engagement Level',
     'Fast Food Level',
     'Healthy Level',
-    'Beverage Level',
-    'Wings Level',
-    'restaurant_source_file'
+   
 ]
 
 CENSUS_COLUMNS = [

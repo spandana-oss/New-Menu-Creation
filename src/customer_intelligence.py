@@ -16,12 +16,9 @@ CUSTOMER_INTELLIGENCE_SHEET_NAME = "Restaurant Intelligence"
 
 BASE_COLUMNS = [
     "ZCTA",
-    "zip_or_postal_code",
     "CITY",
     "STATE",
     "COUNTY",
-    "LAT",
-    "LNG",
     "POP",
     "AVG_HOUSEHOLD_SIZE",
     "age_group",
@@ -35,7 +32,6 @@ BASE_COLUMNS = [
     "COMPETITOR_DENSITY",
     "cluster_id",
     "market_segment",
-    "restaurant category",
     "price positioning",
 ]
 
@@ -50,14 +46,14 @@ EXTRA_COLUMNS = [
 
 OUTPUT_COLUMNS = BASE_COLUMNS + EXTRA_COLUMNS
 
-CATEGORY_FOOD_PHRASES = {
-    "Wings-focused restaurant": "spicy wings, baked wings, and hearty shareable sides",
-    "Seafood-focused restaurant": "grilled seafood, lighter preparations, and fresh sauces",
-    "Chicken-focused restaurant": "crispy or grilled chicken combos with familiar sides",
-    "Beverage-led restaurant": "coffee, smoothies, teas, and refreshing drinks",
-    "Health-oriented restaurant": "salads, bowls, wraps, and fresh ingredients",
-    "Fast-service restaurant": "quick, customizable meals and convenient combos",
-    "General restaurant": "familiar comfort meals and flexible combo options",
+SEGMENT_MENU_PHRASES = {
+    "Healthy Lifestyle Market": "fresh bowls, salads, and lighter meals",
+    "Youth Convenience Market": "quick grab-and-go meals and portable combos",
+    "Family Value Market": "value-driven combo meals and familiar favorites",
+    "Social Dining Market": "shareable plates and beverage-friendly bites",
+    "Premium Dining Market": "elevated dishes and polished service",
+    "Comfort Dining Market": "classic comfort meals and a relaxed pace",
+    "General restaurant": "balanced comfort, value, and freshness",
 }
 
 SEGMENT_REVIEW_PHRASES = {
@@ -100,23 +96,23 @@ SEGMENT_AUDIENCES = {
 }
 
 SEGMENT_HEALTHY_TRENDS = {
-    "Wings-focused restaurant": (
-        "Consumers are showing interest in baked wings, reduced-sodium sauces, and protein-focused meal options."
-    ),
-    "Seafood-focused restaurant": (
-        "Consumers are showing interest in grilled seafood, lighter preparations, and fresh ingredient transparency."
-    ),
-    "Chicken-focused restaurant": (
-        "Consumers are showing interest in grilled chicken, seasoning variety, and lighter combo builds."
-    ),
-    "Beverage-led restaurant": (
-        "Consumers are showing interest in lower-sugar drinks, functional beverages, and all-day refreshment options."
-    ),
-    "Health-oriented restaurant": (
+    "Healthy Lifestyle Market": (
         "Consumers are showing interest in bowls, salads, plant-forward dishes, and functional beverages."
     ),
-    "Fast-service restaurant": (
-        "Consumers are showing interest in lighter quick-service combos, customizable sides, and portable options."
+    "Youth Convenience Market": (
+        "Consumers are showing interest in lighter grab-and-go meals, protein snacks, and quick customizable options."
+    ),
+    "Family Value Market": (
+        "Consumers are showing interest in affordable lighter sides, balanced combo meals, and family-friendly portions."
+    ),
+    "Social Dining Market": (
+        "Consumers are showing interest in shareable lighter plates, balanced combos, and lower-sugar beverages."
+    ),
+    "Premium Dining Market": (
+        "Consumers are showing interest in elevated light plates, fresh ingredients, and wellness-oriented specials."
+    ),
+    "Comfort Dining Market": (
+        "Consumers are showing interest in lighter comfort dishes, grilled proteins, and fresh sides."
     ),
     "General restaurant": (
         "Consumers are showing interest in flexible menu mixes that balance comfort, value, and freshness."
@@ -124,12 +120,12 @@ SEGMENT_HEALTHY_TRENDS = {
 }
 
 SEGMENT_LOCAL_PREFERENCES = {
-    "Wings-focused restaurant": "late-night combo meals and spicy wings",
-    "Seafood-focused restaurant": "grilled seafood and lighter combos",
-    "Chicken-focused restaurant": "crispy chicken combos and shareable sides",
-    "Beverage-led restaurant": "coffee, smoothies, and quick refreshment stops",
-    "Health-oriented restaurant": "fresh bowls, salads, and lighter meals",
-    "Fast-service restaurant": "quick meals and portable combos",
+    "Healthy Lifestyle Market": "fresh bowls, salads, and lighter meals",
+    "Youth Convenience Market": "quick meals and portable combos",
+    "Family Value Market": "family-friendly comfort meals and combo deals",
+    "Social Dining Market": "shareable plates and beverage-friendly bites",
+    "Premium Dining Market": "elevated dining experiences and polished service",
+    "Comfort Dining Market": "classic comfort meals and relaxed dining",
     "General restaurant": "familiar comfort meals and flexible combo options",
 }
 
@@ -220,9 +216,11 @@ def _rating_text(rating: float | int | str | None) -> str:
 
 def _generated_customer_reviews(row: pd.Series) -> str:
     location = _location_text(row)
-    category = _normalize_text(row.get("restaurant category"), "General restaurant")
     market_segment = _normalize_text(row.get("market_segment"), "regional market")
-    category_phrase = CATEGORY_FOOD_PHRASES.get(category, CATEGORY_FOOD_PHRASES["General restaurant"])
+    menu_phrase = SEGMENT_MENU_PHRASES.get(
+        market_segment,
+        SEGMENT_MENU_PHRASES["General restaurant"],
+    )
     segment_phrase = SEGMENT_REVIEW_PHRASES.get(
         market_segment,
         "balanced local demand",
@@ -230,7 +228,7 @@ def _generated_customer_reviews(row: pd.Series) -> str:
 
     return (
         f"{_rating_text(row.get('google_review_rating'))} "
-        f"In {location}, customers particularly enjoy {category_phrase}. "
+        f"In {location}, customers particularly enjoy {menu_phrase}. "
         f"The restaurant fits well within the {market_segment.lower()}."
         f" That combination lines up with {segment_phrase}."
     )
@@ -256,18 +254,18 @@ def _customer_feedback_summary(row: pd.Series) -> str:
 
 
 def _healthy_food_trends(row: pd.Series) -> str:
-    category = _normalize_text(row.get("restaurant category"), "General restaurant")
+    market_segment = _normalize_text(row.get("market_segment"), "General restaurant")
     return SEGMENT_HEALTHY_TRENDS.get(
-        category,
+        market_segment,
         SEGMENT_HEALTHY_TRENDS["General restaurant"],
     )
 
 
 def _local_food_preferences(row: pd.Series) -> str:
     location = _location_text(row)
-    category = _normalize_text(row.get("restaurant category"), "General restaurant")
+    market_segment = _normalize_text(row.get("market_segment"), "General restaurant")
     preference_phrase = SEGMENT_LOCAL_PREFERENCES.get(
-        category,
+        market_segment,
         SEGMENT_LOCAL_PREFERENCES["General restaurant"],
     )
     audience = SEGMENT_AUDIENCES.get(
@@ -279,11 +277,14 @@ def _local_food_preferences(row: pd.Series) -> str:
 
 def _demographic_based_food_insights(row: pd.Series) -> str:
     age_phrase = _dominant_age_phrase(row)
-    category = _normalize_text(row.get("restaurant category"), "General restaurant")
-    category_phrase = CATEGORY_FOOD_PHRASES.get(category, CATEGORY_FOOD_PHRASES["General restaurant"])
+    market_segment = _normalize_text(row.get("market_segment"), "General restaurant")
+    menu_phrase = SEGMENT_MENU_PHRASES.get(
+        market_segment,
+        SEGMENT_MENU_PHRASES["General restaurant"],
+    )
     return (
         f"The surrounding population shows {age_phrase}. "
-        f"Customers in this ZIP code show higher engagement with {category_phrase} offerings "
+        f"Customers in this ZIP code show higher engagement with menu options centered on {menu_phrase} "
         f"that balance flavor, affordability, and convenience."
     )
 
